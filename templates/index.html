@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Instagram Competitor Analyzer</title>
+    <style>
+      :root { color-scheme: dark; }
+      body {
+        font-family: Inter, system-ui, sans-serif;
+        max-width: 1000px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      .card {
+        border: 1px solid #30363d;
+        border-radius: 12px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        background: #111827;
+      }
+      input, button {
+        font-size: 1rem;
+        padding: 0.7rem;
+        border-radius: 8px;
+        border: 1px solid #374151;
+      }
+      input { width: 70%; background: #0f172a; color: #fff; }
+      button { background: #2563eb; color: white; cursor: pointer; }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th, td {
+        border-bottom: 1px solid #374151;
+        padding: 0.6rem;
+        text-align: left;
+      }
+      .muted { color: #9ca3af; }
+      .error { color: #fca5a5; }
+      .hidden { display: none; }
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 0.8rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Instagram 競合アナライザー</h1>
+    <p class="muted">競合アカウントURL（またはユーザー名）を入力すると、直近投稿の平均いいね・平均コメント・ERを表示します。</p>
+
+    <div class="card">
+      <input id="target" placeholder="https://www.instagram.com/username/" />
+      <button id="run">分析する</button>
+      <p id="status" class="muted"></p>
+      <p class="muted">※ フォロワー増加は、前回このアプリで取得した時点との差分です。</p>
+    </div>
+
+    <div id="result" class="hidden">
+      <div class="card">
+        <h2 id="name"></h2>
+        <p id="bio" class="muted"></p>
+        <div class="stats" id="stats"></div>
+      </div>
+
+      <div class="card">
+        <h3>投稿ごとの反応</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>投稿日</th>
+              <th>いいね</th>
+              <th>コメント</th>
+              <th>投稿リンク</th>
+            </tr>
+          </thead>
+          <tbody id="posts"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <script>
+      const runBtn = document.getElementById('run');
+      const statusNode = document.getElementById('status');
+      const resultNode = document.getElementById('result');
+
+      const stat = (label, value) => `<div class="card"><div class="muted">${label}</div><strong>${value}</strong></div>`;
+
+      runBtn.addEventListener('click', async () => {
+        const input = document.getElementById('target').value.trim();
+        if (!input) {
+          statusNode.textContent = 'URLかユーザー名を入力してください。';
+          statusNode.className = 'error';
+          return;
+        }
+
+        statusNode.textContent = '分析中…';
+        statusNode.className = 'muted';
+
+        const resp = await fetch('/api/analyze', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({url_or_username: input})
+        });
+
+        const json = await resp.json();
+        if (!json.ok) {
+          statusNode.textContent = `エラー: ${json.error}`;
+          statusNode.className = 'error';
+          return;
+        }
+
+        const { profile, metrics, posts } = json.data;
+        document.getElementById('name').textContent = `${profile.username} (${profile.full_name || '-'})`;
+        document.getElementById('bio').textContent = profile.biography || 'bioなし';
+
+        const growthLabel = metrics.follower_growth
+          ? `${metrics.follower_growth.absolute >= 0 ? '+' : ''}${metrics.follower_growth.absolute} (since ${new Date(metrics.follower_growth.since).toLocaleString()})`
+          : '初回計測（次回から差分表示）';
+
+        document.getElementById('stats').innerHTML = [
+          stat('Followers', profile.followers.toLocaleString()),
+          stat('Following', profile.following.toLocaleString()),
+          stat('Posts', profile.posts.toLocaleString()),
+          stat('Engagement Rate', `${metrics.engagement_rate_percent}%`),
+          stat('Avg Likes', metrics.avg_likes),
+          stat('Avg Comments', metrics.avg_comments),
+          stat('Follower Growth', growthLabel)
+        ].join('');
+
+        document.getElementById('posts').innerHTML = posts.map((post) => `
+          <tr>
+            <td>${new Date(post.timestamp).toLocaleDateString()}</td>
+            <td>${post.likes.toLocaleString()}</td>
+            <td>${post.comments.toLocaleString()}</td>
+            <td><a href="${post.url}" target="_blank" rel="noreferrer">開く</a></td>
+          </tr>
+        `).join('');
+
+        resultNode.classList.remove('hidden');
+        statusNode.textContent = `取得完了: ${profile.username}`;
+        statusNode.className = 'muted';
+      });
+    </script>
+  </body>
+</html>
